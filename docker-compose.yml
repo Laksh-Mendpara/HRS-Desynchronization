@@ -5,17 +5,27 @@ networks:
     driver: bridge
 
 services:
-  frontend:
+  frontend-proxy:
     build:
       context: ./nginx
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - cache-layer
     networks:
       - internal
 
-  backend:
+  cache-layer:
+    build:
+      context: ./varnish
+    expose:
+      - "6081"
+    depends_on:
+      - backend-origin
+    networks:
+      - internal
+
+  backend-origin:
     build:
       context: ./backend
     expose:

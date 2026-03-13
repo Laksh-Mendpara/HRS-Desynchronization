@@ -1,7 +1,7 @@
 """Gunicorn entry-point for the Flask application.
 
 Worker configuration is set here so that Gunicorn maintains persistent
-(keep-alive) connections to Nginx.  This is critical for the PoC: it ensures
+(keep-alive) connections to Varnish.  This is critical for the PoC: it ensures
 that a smuggled request prefix written into the socket buffer by the first
 request is still present when the next (victim) request arrives.
 """
