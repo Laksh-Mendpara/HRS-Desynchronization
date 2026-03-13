@@ -1,0 +1,24 @@
+version: "3.9"
+
+networks:
+  internal:
+    driver: bridge
+
+services:
+  frontend:
+    build:
+      context: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+    expose:
+      - "8000"
+    networks:
+      - internal
