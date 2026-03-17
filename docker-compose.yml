@@ -1,34 +1,45 @@
-version: "3.9"
+# =============================================================================
+# Docker Compose – Three-tier HRS Desynchronization Lab
+# =============================================================================
+# Topology:
+#   frontend-proxy (Nginx :80) → cache-layer (Varnish :6081) → backend-origin (Gunicorn :8000)
+#
+# All three services share the 'internal' bridge network.  Only Nginx
+# exposes port 80 to the host; Varnish and Gunicorn are internal-only.
+# =============================================================================
 
 networks:
   internal:
     driver: bridge
 
 services:
+  # ── Nginx – edge proxy (trusts Content-Length) ─────────────────────────────
   frontend-proxy:
     build:
       context: ./nginx
     ports:
-      - "80:80"
+      - "80:80"           # Expose to the host so the exploit script can reach it.
     depends_on:
       - cache-layer
     networks:
       - internal
 
+  # ── Varnish – caching layer (caches .js/.css for 1 h) ─────────────────────
   cache-layer:
     build:
       context: ./varnish
     expose:
-      - "6081"
+      - "6081"            # Internal only; Nginx forwards traffic here.
     depends_on:
       - backend-origin
     networks:
       - internal
 
+  # ── Gunicorn/Flask – backend origin (trusts Transfer-Encoding) ─────────────
   backend-origin:
     build:
       context: ./backend
     expose:
-      - "8000"
+      - "8000"            # Internal only; Varnish forwards traffic here.
     networks:
       - internal
