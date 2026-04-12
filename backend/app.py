@@ -97,3 +97,4 @@ def reflect():
 def admin():
     """Simulated sensitive area for smuggling bypass demos."""
     return Response("Sensitive Admin Console\n", status=200, mimetype="text/plain")
+
