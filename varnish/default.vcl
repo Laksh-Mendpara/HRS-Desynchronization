@@ -1,4 +1,4 @@
-vcl 4.1;
+vcl 4.0;
 
 # ============================================================================
 # default.vcl  –  HARDENED / MITIGATED CONFIGURATION

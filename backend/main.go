@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"strings"
 )
 
@@ -64,6 +65,11 @@ func handleConnection(conn net.Conn) {
 			q := ""
 			if parts := strings.Split(path, "?q="); len(parts) > 1 {
 				q = parts[1]
+			}
+			// URL-decode the query parameter so the reflected payload
+			// appears as raw HTML (e.g. <script>) instead of %3Cscript%3E.
+			if decoded, err := url.QueryUnescape(q); err == nil {
+				q = decoded
 			}
 			sendResponse(conn, "text/html", fmt.Sprintf("<html><body>%s</body></html>\n", q))
 		} else if strings.HasPrefix(path, "/js/app.js") {
