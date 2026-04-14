@@ -2,75 +2,123 @@
 
 ## Stack Overview
 
-The lab is composed of three runtime layers:
+The lab is composed of four Docker services defined in `docker-compose.yml`:
 
-1. `frontend-proxy` using Nginx
-2. `cache-layer` using Varnish
-3. `backend-origin` using Gunicorn and Flask
+| Service | Technology | Exposed Port |
+|---|---|---|
+| `frontend-proxy` | Nginx 1.25.5 | `0.0.0.0:80` |
+| `cache-layer` | Varnish 4.1.9 (Alpine 3.5) | internal `6081` |
+| `backend-origin` | Native Go TCP server | internal `8000` |
+| `network-sniffer` | nicolaka/netshoot (`tcpdump`) | — (shares backend network namespace) |
 
 Traffic path:
 
-`attacker -> nginx stream proxy -> varnish -> gunicorn/flask`
+```
+Attacker → Nginx (:80) → Varnish (:6081) → Go Backend (:8000)
+                                                    ↑
+                                            tcpdump sidecar
+                                         (writes smuggling_trace.pcap)
+```
 
-## Role Of Each Layer
+---
 
-### Nginx
+## Role of Each Layer
 
-Nginx is configured as a raw TCP proxy using the `stream {}` module.
+### Nginx (`nginx/nginx.conf`)
 
-Effect:
+Nginx runs in **HTTP proxy mode** (not TCP stream mode). This is the current architecture after moving away from the older `stream {}` pass-through approach.
 
-- it listens on port `80`
-- it forwards traffic to Varnish on port `6081`
-- it does not perform normal HTTP-layer validation
+Key configuration:
 
-### Varnish
+```nginx
+underscores_in_headers on;   # THE VULNERABILITY
+proxy_http_version 1.1;
+proxy_set_header Connection "keep-alive";
+proxy_pass http://cache-layer:6081;
+```
 
-Varnish acts as the caching layer.
+- `underscores_in_headers on` allows the `Transfer_Encoding` header (with an underscore) to pass through without being dropped or rejected.
+- HTTP/1.1 keep-alive is preserved end-to-end.
+- Nginx **does** parse HTTP but does not normalise or reject conflicting `Content-Length` + `Transfer_Encoding` combinations in this vulnerable configuration.
 
-Effect:
+### Varnish (`varnish/default.vcl`)
 
-- it decides whether to cache or pass a request
-- it caches `.js` and `.css` responses
-- it reuses backend connections in a way that helps preserve the attack state
+Varnish 4.1.9 acts as the caching layer. The VCL declares `vcl 4.0` (as required by this version — `vcl 4.1` is not supported until Varnish 5+).
 
-### Gunicorn / Flask
+Key behaviours:
 
-The backend origin serves the application responses.
+- Caches responses whose URL ends in `.js` or `.css` for **1 hour** (`TTL: 1h`).
+- Passes POST/non-GET requests directly to the backend (no caching).
+- Maintains **persistent keep-alive connections** to the backend — this is the condition that allows the smuggled prefix to survive into the next request.
+- Adds `X-Cache: HIT` or `X-Cache: MISS` and `Via: 1.1 varnish-v4` to responses.
 
-Effect:
+### Native Go Backend (`backend/main.go`)
 
-- `/` returns a simple response
-- `/js/app.js` returns the legitimate JavaScript asset
-- `/reflect?q=` reflects attacker-controlled input
-- custom patching makes the backend suitable for this desynchronization lab
+The backend is a **custom TCP HTTP server** written in Go — not a framework or Gunicorn/Flask. It listens on `0.0.0.0:8000` and handles keep-alive connections in a goroutine per connection.
 
-## Why This Layout Matters
+**The engineered vulnerability:**
 
-The core attack depends on different components treating the same byte stream differently.
+```go
+// Detects Transfer_Encoding: chunked (underscore variant or hyphen)
+if strings.Contains(strings.ToUpper(headerLine), "TRANSFER_ENCODING: CHUNKED") ||
+   strings.Contains(strings.ToUpper(headerLine), "TRANSFER-ENCODING: CHUNKED") {
+    isChunked = true
+}
 
-- the frontend path preserves the attacker-controlled bytes
-- the cache layer later asks for a cacheable object
-- the backend interprets leftover bytes as the start of a different request
+// If chunked: read until 0\r\n\r\n and STOP — ignores Content-Length.
+// Smuggled bytes remain in the socket buffer.
+if isChunked {
+    readChunkedBody(reader)
+}
+```
 
-That mismatch lets the response for `/reflect?q=<payload>` become stored under the cache key for `/js/app.js`.
+- `Content-Length` is **completely ignored** when `Transfer_Encoding` is present.
+- After reading the chunked body, the connection loop continues — the leftover smuggled bytes become the start of the "next request".
+
+Endpoints:
+
+| Path | Behaviour |
+|---|---|
+| `/` | Returns plain text status |
+| `/js/app.js` | Returns a static JavaScript snippet |
+| `/reflect?q=<value>` | URL-decodes `q` and reflects it as raw HTML in `<html><body>…</body></html>` |
+
+### Network Sniffer (`network-sniffer`)
+
+A `tcpdump` sidecar that shares the backend container's network namespace (`network_mode: "service:backend-origin"`). It captures all traffic on port 8000 and writes it to `captures/smuggling_trace.pcap`.
+
+---
+
+## Why This Layout Creates the Desynchronization
+
+The attack depends on **three simultaneous conditions** all being true:
+
+1. **Nginx forwards `Transfer_Encoding`** (underscore) because `underscores_in_headers on` prevents it from stripping or rejecting the non-standard header.
+2. **Varnish keeps the backend connection alive** between requests, so bytes left over from request N become input for request N+1.
+3. **The Go backend stops reading at `0\r\n\r\n`**, leaving the attacker's smuggled `GET /reflect?q=<payload>` prefix sitting in the socket buffer.
+
+When the attacker's trigger request arrives, Varnish forwards it to the backend. The backend reads the smuggled prefix first, processes `/reflect?q=<payload>`, and returns the attacker's HTML. Varnish caches that response under the `/js/app.js` cache key.
+
+---
 
 ## Cache Target
 
-The main target is:
+The recommended demonstration target:
 
-- `/js/app.js`
+```
+/js/app.js?cb=<unique>
+```
 
-For repeatable testing, a better target is often:
+The query string creates a **fresh cache key**, avoiding collisions with previously cached content. Each `?cb=` value is its own independent Varnish cache entry.
 
-- `/js/app.js?cb=<unique>`
+---
 
-The query string creates a fresh cache key and avoids collisions with previously cached content.
+## Files That Define the Architecture
 
-## Files That Define The Architecture
-
-- `docker-compose.yml`
-- `nginx/nginx.conf`
-- `varnish/default.vcl`
-- `backend/app.py`
-- `backend/wsgi.py`
+| File | Purpose |
+|---|---|
+| `docker-compose.yml` | Service definitions, network, volumes |
+| `nginx/nginx.conf` | Vulnerable Nginx config |
+| `varnish/default.vcl` | Vulnerable VCL 4.0 config |
+| `backend/main.go` | Native Go vulnerable HTTP server |
+| `backend/Dockerfile` | Multi-stage build → scratch image |

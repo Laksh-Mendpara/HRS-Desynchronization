@@ -1,11 +1,5 @@
 # =============================================================================
-# Docker Compose – Three-tier HRS Desynchronization Lab
-# =============================================================================
-# Topology:
-#   frontend-proxy (Nginx :80) → cache-layer (Varnish :6081) → backend-origin (Gunicorn :8000)
-#
-# All three services share the 'internal' bridge network.  Only Nginx
-# exposes port 80 to the host; Varnish and Gunicorn are internal-only.
+# Updated Docker Compose – High-Observability HRS Lab
 # =============================================================================
 
 networks:
@@ -13,33 +7,49 @@ networks:
     driver: bridge
 
 services:
-  # ── Nginx – edge proxy (trusts Content-Length) ─────────────────────────────
+  # ── Nginx – Layer 7 Proxy (Vulnerable Config) ──────────────────────────────
   frontend-proxy:
     build:
       context: ./nginx
     ports:
-      - "80:80"           # Expose to the host so the exploit script can reach it.
+      - "80:80"
     depends_on:
       - cache-layer
     networks:
       - internal
 
-  # ── Varnish – caching layer (caches .js/.css for 1 h) ─────────────────────
+  # ── Varnish – Caching Layer ────────────────────────────────────────────────
   cache-layer:
     build:
       context: ./varnish
     expose:
-      - "6081"            # Internal only; Nginx forwards traffic here.
+      - "6081"
     depends_on:
       - backend-origin
     networks:
       - internal
 
-  # ── Gunicorn/Flask – backend origin (trusts Transfer-Encoding) ─────────────
+  # ── Native Go Backend – The Desync Engine ──────────────────────────────────
   backend-origin:
     build:
       context: ./backend
     expose:
-      - "8000"            # Internal only; Varnish forwards traffic here.
+      - "8000"
     networks:
       - internal
+
+  # ── Network Sniffer – Packet Capture (Observability Upgrade) ───────────────
+  # This container captures the raw traffic between Varnish and the Backend.
+  # We use 'netshoot', a powerful networking Swiss Army knife.
+  network-sniffer:
+    image: nicolaka/netshoot
+    # Join the backend's network namespace to sniff its traffic
+    network_mode: "service:backend-origin"
+    volumes:
+      - ./captures:/captures
+    # -i any: listen on all interfaces
+    # -w: write to file
+    # port 8000: filter for backend traffic
+    command: tcpdump -i any -s 0 -w /captures/smuggling_trace.pcap port 8000
+    depends_on:
+      - backend-origin

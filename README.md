@@ -2,203 +2,160 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](docker-compose.yml)
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go)](backend/main.go)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python)](exploit/attack.py)
 
-Educational lab for demonstrating cache poisoning through HTTP request smuggling in a three-tier stack:
-
-`attacker -> Nginx stream proxy -> Varnish cache -> Gunicorn/Flask`
-
-## Architecture
+An advanced educational laboratory demonstrating **web cache poisoning via CL.TE HTTP Request Smuggling**. The stack is a realistic three-tier pipeline — Nginx → Varnish → a natively-vulnerable Go server — with integrated packet-level observability.
 
 ```
-  ┌─────────────┐   port 80    ┌───────────────────┐  :6081  ┌──────────────────┐  :8000  ┌──────────────────────┐
-  │  Attacker   │─────────────▶│  Nginx            │────────▶│  Varnish         │────────▶│  Gunicorn / Flask    │
-  │ attack.py   │   raw TCP    │  stream proxy     │         │  cache-layer     │         │  backend-origin      │
-  └─────────────┘              │  no HTTP parsing  │         │  caches .js/.css │         │  patched for desync  │
-                               └───────────────────┘         └──────────────────┘         └──────────────────────┘
+Attacker ──► Nginx (HTTP/1.1 proxy, port 80)
+                │  underscores_in_headers on  ← forwards Transfer_Encoding unchanged
+                ▼
+            Varnish (cache-layer, port 6081)
+                │  vcl 4.0  ·  caches .js/.css for 1 h
+                ▼
+            Native Go Backend (backend-origin, port 8000)
+                │  honours Transfer_Encoding: chunked
+                │  stops reading at 0\r\n\r\n → smuggled bytes stay in socket buffer
+                ▼
+            tcpdump sidecar → captures/smuggling_trace.pcap
 ```
 
-Important detail: this lab does **not** use Nginx HTTP proxying. `nginx/nginx.conf` uses the `stream {}` module, so Nginx forwards raw TCP bytes to Varnish without normalizing headers.
+---
 
-## Repository Layout
+## 🏗️ Architecture & Desynchronization Pipeline
+
+| Layer | Service | Image | Key Behaviour |
+|---|---|---|---|
+| Frontend proxy | `frontend-proxy` | `nginx:1.25.5` | HTTP/1.1 reverse proxy; `underscores_in_headers on` lets `Transfer_Encoding` pass through |
+| Cache | `cache-layer` | Alpine 3.5 + Varnish 4.1.9 | VCL 4.0; caches `.js`/`.css` 1 h; keeps persistent connections to origin |
+| Origin | `backend-origin` | Go 1.22 (scratch) | Custom TCP server; intentionally honours `Transfer_Encoding` and stops at chunked terminator |
+| Observability | `network-sniffer` | `nicolaka/netshoot` | `tcpdump` in backend network namespace → `captures/smuggling_trace.pcap` |
+
+### Why This Stack Creates the Vulnerability
+
+1. **Nginx** uses `underscores_in_headers on`, so `Transfer_Encoding` (underscore) is forwarded alongside a normal `Content-Length`. It proxies as HTTP/1.1 with `Connection: keep-alive`.
+2. **Varnish** sees both headers, passes the POST to origin (cache miss), and keeps the connection open.
+3. **The Go backend** detects `Transfer_Encoding: chunked`, reads until `0\r\n\r\n`, and **stops** — leaving the smuggled prefix in the TCP socket buffer.
+4. The attacker's follow-up trigger request causes Varnish to fetch `/js/app.js` from the backend, but the backend reads the smuggled `GET /reflect?q=<payload>` prefix first, returning the attacker's HTML.
+5. Varnish **caches** that HTML response under the `/js/app.js` cache key.
+
+---
+
+## 📁 Repository Layout
 
 ```
 HRS-Desynchronization/
-├── docker-compose.yml
-├── docs/
-├── nginx/
-├── varnish/
 ├── backend/
+│   ├── Dockerfile          # Multi-stage Go build → scratch image
+│   └── main.go             # Natively-vulnerable TCP HTTP server (Go)
+├── captures/               # Auto-generated .pcap files (git-ignored)
 ├── exploit/
-└── mitigation/
+│   └── attack.py           # 4-phase CL.TE cache-poisoning toolkit (Python)
+├── mitigation/
+│   ├── nginx.conf          # Hardened Nginx (rejects dual-length requests)
+│   └── default.vcl         # Hardened Varnish VCL (strips TE, forces conn:close)
+├── nginx/
+│   └── nginx.conf          # Vulnerable Nginx config (underscores_in_headers on)
+├── varnish/
+│   └── default.vcl         # Vulnerable VCL 4.0 config
+├── docs/                   # Detailed documentation
+├── docker-compose.yml      # Full 4-container lab stack
+└── pyproject.toml          # Python exploit dependencies (uv)
 ```
 
-## Documentation
+---
 
-Detailed project docs are available in [`docs/`](./docs/README.md):
+## ⚙️ Prerequisites
 
-- [`docs/assumptions.md`](./docs/assumptions.md)
-- [`docs/architecture.md`](./docs/architecture.md)
-- [`docs/attack-theory.md`](./docs/attack-theory.md)
-- [`docs/attack-execution.md`](./docs/attack-execution.md)
-- [`docs/mitigation.md`](./docs/mitigation.md)
+- **Docker** with the Compose v2 plugin (`docker compose`)
+- **Python 3.10+** and [`uv`](https://github.com/astral-sh/uv)
+- **Wireshark** (optional — for PCAP analysis)
 
-## Prerequisites
-
-- Docker with `docker compose`
-- Python 3.10+
-- `uv` package manager. Install dependencies and activate the virtual environment:
-  ```bash
-  uv sync
-  source .venv/bin/activate
-  ```
-
-## Start The Lab
+Install exploit dependencies:
 
 ```bash
-`docker compose up --build -d`
-docker compose ps
+uv sync
+source .venv/bin/activate
+# Windows: .venv\Scripts\activate
 ```
 
-Expected services:
+---
 
-- `frontend-proxy` on `localhost:80`
-- `cache-layer` on internal port `6081`
-- `backend-origin` on internal port `8000`
-
-## Safe Baseline Checks
-
-Use these before the exploit:
+## 🚀 Start the Lab
 
 ```bash
-curl -i http://localhost/
-curl -i "http://localhost/reflect?q=hello"
+docker compose up --build -d
+docker compose ps          # all 4 containers should show "Up"
+curl -i http://localhost/  # sanity-check the stack
 ```
 
-Do **not** request `/js/app.js` before the attack if you plan to poison the plain `/js/app.js` cache key. A normal request will warm the cache and the trigger request will no longer reach the backend.
+---
 
-## Perform The Attack
+## ⚔️ Perform the Attack
 
-There are two reliable ways to run the demo. The recommended approach is to use a fresh cache key for each test to avoid collisions.
+The exploit script (`exploit/attack.py`) runs a **4-phase** attack:
 
-### Recommended: Use a fresh cache key
-
-This avoids collisions with an already-cached `/js/app.js`.
+| Phase | Action |
+|---|---|
+| 0 | Probe for HTTP/2 support (informational — reveals additional H2.CL surface if present) |
+| 1 | Send the CL.TE smuggling `POST /reflect` request (plants smuggled GET prefix in socket buffer) |
+| 2 | Send trigger `GET /js/app.js?cb=…` on the **same** keep-alive connection |
+| 3 | Open a **new** connection and verify the cache is poisoned |
 
 ```bash
 python exploit/attack.py \
   --host localhost \
   --port 80 \
-  --target-path '/js/app.js?cb=demo1'
+  --target-path "/js/app.js?cb=demo1"
 ```
 
-Custom payload example:
+Custom payload:
 
 ```bash
 python exploit/attack.py \
   --host localhost \
   --port 80 \
-  --target-path '/js/app.js?cb=demo2' \
-  --payload "<script>console.log('poisoned_script ran successfully'); alert('owned');</script>"
+  --target-path "/js/app.js?cb=demo2" \
+  --payload "<script>alert('owned')</script>"
 ```
 
-Verify manually:
+> **Tip:** Use a fresh `?cb=` value for each test run to avoid hitting a warm cache.
+
+### Verify the Poisoning
 
 ```bash
 curl -i "http://localhost/js/app.js?cb=demo1"
 ```
 
-Successful output should show:
+Successful indicators:
+- `X-Cache: HIT` — served from Varnish cache
+- `Via: 1.1 varnish-v4` — confirms cache path
+- Response body contains your raw HTML payload (e.g. `<script>alert('Cache Poisoned!')</script>`)
+- `Content-Type: text/html` instead of `application/javascript`
 
-- `X-Cache: HIT`
-- an HTML body containing your payload instead of the legitimate JavaScript file
+---
 
-### Alternative: Poison the exact `/js/app.js` path
+## 🔎 Observability (PCAP / Wireshark)
 
-First reset Varnish so `/js/app.js` is not already cached:
+Every time the stack runs, the `network-sniffer` container captures raw traffic between Varnish and the Go backend:
 
-```bash
-docker compose restart cache-layer
-```
+1. Open `captures/smuggling_trace.pcap` in Wireshark.
+2. Right-click any HTTP packet → **Follow → TCP Stream**.
+3. You will see the chunked terminator `0\r\n\r\n` immediately followed by the smuggled `GET /reflect?q=…` prefix sitting in the raw TCP buffer — proving the boundary dispute.
 
-Then run:
+---
 
-```bash
-python exploit/attack.py \
-  --host localhost \
-  --port 80 \
-  --target-path /js/app.js \
-  --payload "<script>console.log('poisoned_script ran successfully'); alert('owned');</script>"
-```
+## 🛡️ Mitigation & Remediation
 
-Manual verification:
+The `mitigation/` directory contains hardened drop-in replacements:
 
-```bash
-curl -i http://localhost/js/app.js
-```
+| File | Key Changes |
+|---|---|
+| `mitigation/nginx.conf` | Rejects dual-length requests (400); strips `Transfer-Encoding`; enables request buffering; forces `Connection: close` to backend |
+| `mitigation/default.vcl` | VCL 4.0; rejects dual-length at cache edge; strips `Transfer-Encoding` before backend fetch; forces `Connection: close`; never caches 5xx responses |
 
-Successful output should show:
-
-- `X-Cache: HIT`
-- an HTML body containing your payload instead of the legitimate JavaScript file.
-
-## What The Exploit Does
-
-`exploit/attack.py` performs three phases:
-
-1. Sends a `POST /reflect` containing both `Content-Length` and `Transfer_Encoding: chunked`.
-2. Smuggles a `GET /reflect?q=<payload>` prefix into the backend keep-alive connection.
-3. Triggers a fetch for the chosen cache key, causing Varnish to cache the reflected payload under that key.
-
-The script now accepts `--target-path`, so you can poison either:
-
-- `/js/app.js`
-- `/js/app.js?cb=<unique>`
-
-Using a unique query string is the easiest way to ensure the target is a cache miss.
-
-Note: in this lab the exploit deliberately uses `Transfer_Encoding` with an underscore. The patched backend accepts it, and that is the variant that was verified to work here. Replacing it with the standard `Transfer-Encoding` header caused the request to fail with `400 Bad Request` during testing.
-
-## Troubleshooting
-
-### Attack says `Cache HIT received but payload not detected`
-
-That usually means the target path was already cached before the exploit ran.
-
-Fix:
-
-```bash
-docker compose restart cache-layer
-```
-
-or rerun with a fresh cache key:
-
-```bash
-python3 exploit/attack.py \
-  --host localhost \
-  --port 80 \
-  --target-path '/js/app.js?cb=retry1'
-```
-
-### Homepage or another path looks poisoned unexpectedly
-
-The backend connection can remain desynchronized if you interrupt testing midway. Reset the lab:
-
-```bash
-docker compose restart frontend-proxy cache-layer backend-origin
-```
-
-### See live logs
-
-```bash
-docker compose logs -f frontend-proxy cache-layer backend-origin
-```
-
-## Mitigation
-
-Hardened configs are included in `mitigation/`.
-
-Apply them:
+Apply the mitigations:
 
 ```bash
 cp mitigation/nginx.conf nginx/nginx.conf
@@ -206,27 +163,17 @@ cp mitigation/default.vcl varnish/default.vcl
 docker compose up --build -d
 ```
 
-Mitigation idea summary:
+Re-run the exploit. The ambiguous request will be rejected with `400 Bad Request` and the cache will stay clean.
 
-- reject requests that carry both `Content-Length` and `Transfer-Encoding`
-- strip `Transfer-Encoding` before forwarding upstream
-- avoid backend connection reuse for ambiguous requests
+---
 
-## Teardown
+## 📚 References
 
-```bash
-docker compose down
-```
+- [RFC 7230 § 3.3.3 — Message Body Length](https://datatracker.ietf.org/doc/html/rfc7230#section-3.3.3)
+- [PortSwigger Web Security Academy — HTTP Request Smuggling](https://portswigger.net/web-security/request-smuggling)
+- [PortSwigger — Web Cache Poisoning](https://portswigger.net/web-security/web-cache-poisoning)
 
-## References
-
-- RFC 7230 Section 3.3.3: https://tools.ietf.org/html/rfc7230#section-3.3.3
-- PortSwigger request smuggling: https://portswigger.net/web-security/request-smuggling
-- OWASP HTTP Request Smuggling: https://owasp.org/www-community/attacks/HTTP_Request_Smuggling
-
-## Disclaimer
-
-For educational use only. Test only on systems you own or are explicitly authorized to assess.
+---
 
 ## License
 
