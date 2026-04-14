@@ -42,6 +42,7 @@ Detailed project docs are available in [`docs/`](./docs/README.md):
 - [`docs/attack-theory.md`](./docs/attack-theory.md)
 - [`docs/attack-execution.md`](./docs/attack-execution.md)
 - [`docs/mitigation.md`](./docs/mitigation.md)
+- [`docs/deployment.md`](./docs/deployment.md)
 
 ## Prerequisites
 
