@@ -39,15 +39,17 @@
 % ─── Footline ──────────────────────────────────────────────────────────────────
 \setbeamertemplate{footline}{%
   \leavevmode%
+  \begin{beamercolorbox}[wd=\paperwidth,ht=0.1pt]{accent}%
+  \end{beamercolorbox}%
   \hbox to \paperwidth{%
-    \begin{beamercolorbox}[wd=.30\paperwidth,ht=2.5ex,dp=1.2ex,leftskip=4mm]{footline}%
-      \usebeamerfont{footline}\tiny Group 19%
+    \begin{beamercolorbox}[wd=.3333\paperwidth,ht=3.25ex,dp=1.5ex,leftskip=8mm]{footline}%
+      \usebeamerfont{footline}\tiny \textbf{GROUP 19} \;\textbar\; Laksh M. et al.%
     \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.40\paperwidth,ht=2.5ex,dp=1.2ex,center]{footline}%
-      \usebeamerfont{footline}\tiny HTTP/1.1 Request Smuggling \& Mitigation%
+    \begin{beamercolorbox}[wd=.3333\paperwidth,ht=3.25ex,dp=1.5ex,center]{footline}%
+      \usebeamerfont{footline}\tiny INFRASTRUCTURE VULNERABILITY ANALYSIS%
     \end{beamercolorbox}%
-    \begin{beamercolorbox}[wd=.30\paperwidth,ht=2.5ex,dp=1.2ex,rightskip=4mm,right]{footline}%
-      \usebeamerfont{footline}\tiny\insertframenumber{}\,/\,\inserttotalframenumber%
+    \begin{beamercolorbox}[wd=.3334\paperwidth,ht=3.25ex,dp=1.5ex,rightskip=8mm,right]{footline}%
+      \usebeamerfont{footline}\tiny \insertframenumber{} / \inserttotalframenumber%
     \end{beamercolorbox}%
   }%
   \vskip0pt%
@@ -68,30 +70,30 @@
 % ─── TikZ Styles ───────────────────────────────────────────────────────────────
 \tikzset{
   actor/.style={
-    rectangle, rounded corners=4pt,
-    draw=accent, line width=1.4pt,
+    rectangle, rounded corners=5pt,
+    draw=accent, line width=1.5pt,
     fill=darkblue, text=white,
-    font=\bfseries\footnotesize,
-    minimum height=11mm, minimum width=28mm,
-    align=center, drop shadow={opacity=0.25}
+    font=\bfseries\small,
+    minimum height=12mm, minimum width=32mm,
+    align=center, drop shadow={opacity=0.3}
   },
   phaselabel/.style={
-    rectangle, rounded corners=2pt,
+    rectangle, rounded corners=3pt,
     font=\scriptsize\bfseries,
-    minimum width=10mm, minimum height=5mm,
+    minimum width=16mm, minimum height=6mm,
     inner sep=2pt, align=center
   },
-  arr/.style={-{Stealth[length=5pt,width=4pt]}, line width=1.2pt},
+  arr/.style={-{Stealth[length=6pt,width=4pt]}, line width=1.3pt},
   infobox/.style={
-    rectangle, rounded corners=3pt,
-    line width=0.9pt, font=\tiny,
-    inner sep=4pt, align=left, text width=3.6cm
+    rectangle, rounded corners=4pt,
+    line width=1pt, font=\tiny,
+    inner sep=5pt, align=left, text width=3.8cm
   },
   mitigate/.style={
-    rectangle, rounded corners=3pt,
-    draw=success!70!black, line width=1pt,
+    rectangle, rounded corners=4pt,
+    draw=success!70!black, line width=1.2pt,
     fill=success!8, font=\scriptsize\bfseries,
-    inner sep=4pt, align=left, text=darkblue
+    inner sep=5pt, align=left, text=darkblue
   },
 }
 
@@ -120,34 +122,34 @@
     % Background
     \fill[darkblue] (current page.south west) rectangle (current page.north east);
     % Accent rules
-    \fill[accent] (current page.north west) rectangle +(\paperwidth, -3pt);
-    \fill[accent] (current page.south west) rectangle +(\paperwidth, 3pt);
-    % Subtle grid (non-nested loops)
-    \foreach \x in {0,1.8,...,17} {
-      \draw[accent!6, line width=0.3pt] (\x, 0) -- (\x, 9.6);
+    \fill[accent] (current page.north west) rectangle +(\paperwidth, -4pt);
+    \fill[accent] (current page.south west) rectangle +(\paperwidth, 4pt);
+    % Decorative background
+    \foreach \x in {0,2,...,16} {
+      \draw[accent!8, line width=0.4pt] (\x, 0) -- (\x, 9);
     }
-    \foreach \y in {0,1.4,...,9.6} {
-      \draw[accent!6, line width=0.3pt] (0, \y) -- (17, \y);
+    \foreach \y in {0,1.5,...,9} {
+      \draw[accent!8, line width=0.4pt] (0, \y) -- (16, \y);
     }
     % Title content
     \node[text=white, font=\bfseries\LARGE, align=center] at (current page.center) {%
-      \textcolor{accent}{\rule{7cm}{1.5pt}}\\[8pt]
-      \textcolor{accentlight}{\small INFRASTRUCTURE VULNERABILITY ANALYSIS}\\[10pt]
-      {\LARGE HTTP/1.1 Request Smuggling}\\[5pt]
-      {\large \& Cache Poisoning Mitigation}\\[8pt]
-      \textcolor{accent}{\rule{7cm}{1.5pt}}
+      \textcolor{accent}{\rule{8cm}{2pt}}\\[10pt]
+      \textcolor{accentlight}{\small INFRASTRUCTURE VULNERABILITY ANALYSIS}\\[12pt]
+      {\LARGE HTTP/1.1 Request Smuggling}\\[6pt]
+      {\large \& Cache Poisoning Mitigation}\\[10pt]
+      \textcolor{accent}{\rule{8cm}{2pt}}
     };
     \node[text=accentlight, font=\scriptsize, align=center]
-      at ([yshift=-2.9cm]current page.center)
+      at ([yshift=-3.0cm]current page.center)
       {CL.TE Desynchronization Attack on a 3-Tier Stack
        (Nginx $\rightarrow$ Varnish $\rightarrow$ Go Backend)};
     \node[text=white, font=\small, align=center]
-      at ([yshift=-3.9cm]current page.center)
+      at ([yshift=-4.0cm]current page.center)
       {\textcolor{accent}{\textbf{Group 19}} \;\textbar\;
        Laksh Mendpara \;$\cdot$\; Sahilpreet Singh \;$\cdot$\;
        Saher Dev \;$\cdot$\; Aaditya Bansal \;$\cdot$\; Anshuman Parida};
     \node[text=accentlight!50, font=\tiny]
-      at ([yshift=-4.6cm]current page.center) {05.07.2025};
+      at ([yshift=-4.7cm]current page.center) {05.07.2025};
   \end{tikzpicture}
 \end{frame}
 }
@@ -156,142 +158,140 @@
 \begin{frame}{\textbf{CL.TE Attack Flow} --- Desynchronization \& Cache Poisoning}
 \vspace{-2mm}
 
-\begin{tikzpicture}[remember picture, scale=0.82, transform shape,
+\begin{tikzpicture}[remember picture, scale=0.85, transform shape,
                     every node/.style={transform shape}]
 
-  % ── Column positions ─────────────────────────────────────────────────────────
-  \def\colA{0}      % Attacker
-  \def\colB{3.8}    % Nginx
-  \def\colC{7.6}    % Varnish
-  \def\colD{11.4}   % Go Backend
+  % ── Column positions (Centering and filling width) ───────────────────────────
+  \def\colA{0}        % Attacker
+  \def\colB{4.6}      % Nginx
+  \def\colC{9.2}      % Varnish
+  \def\colD{13.8}     % Go Backend
 
   % ── Actors ───────────────────────────────────────────────────────────────────
   \node[actor] (A) at (\colA, 0)  {Attacker\\[-1pt]{\tiny\ttfamily attack.py}};
-  \node[actor] (N) at (\colB, 0)  {Nginx\\[-1pt]{\tiny\ttfamily underscores on}};
-  \node[actor] (V) at (\colC, 0)  {Varnish\\[-1pt]{\tiny cache layer}};
-  \node[actor] (B) at (\colD, 0)  {Go Backend\\[-1pt]{\tiny custom TCP}};
+  \node[actor] (N) at (\colB, 0)  {Nginx\\[-1pt]{\tiny\ttfamily (Front-end)}};
+  \node[actor] (V) at (\colC, 0)  {Varnish\\[-1pt]{\tiny (Cache)}};
+  \node[actor] (B) at (\colD, 0)  {Go Backend\\[-1pt]{\tiny (TCP Server)}};
 
   % ── Lifelines ────────────────────────────────────────────────────────────────
   \foreach \n in {A,N,V,B} {
-    \draw[dashed, accent!25, line width=0.6pt] (\n.south) -- ++(0,-8.4);
+    \draw[dashed, accent!30, line width=0.8pt] (\n.south) -- ++(0,-8.0);
   }
 
   % ════════════════════════════════════════════════════════════════════════════
   % PHASE 0 — Environment
   % ════════════════════════════════════════════════════════════════════════════
-  \fill[phasebg0, rounded corners=2pt, opacity=0.5]
-    (-1.5,-0.7) rectangle (13.5,-1.35);
-  \node[phaselabel, fill=accent!20, text=accent!80!black] at (-1.1,-1.0)
-    {Ph.\,0};
-  \node[font=\tiny, text=darkblue!70] at (\colA,-1.02) {raw TCP socket};
-  \node[font=\tiny, text=darkblue!70] at (\colB,-1.02) {trusts CL};
-  \node[font=\tiny, text=darkblue!70] at (\colC,-1.02) {keep-alive conn};
-  \node[font=\tiny, text=darkblue!70] at (\colD,-1.02) {trusts TE};
+  \fill[phasebg0, rounded corners=4pt, opacity=0.4]
+    (-1.5,-0.7) rectangle (15.5,-1.35);
+  \node[phaselabel, fill=accent!30, text=accent!80!black] at (-0.8,-1.0)
+    {PHASE 0};
+  \node[font=\tiny\bfseries, text=darkblue!70] at (\colA,-1.02) {RAW SOCKETS};
+  \node[font=\tiny\bfseries, text=darkblue!70] at (\colB,-1.02) {CL PRIORITY};
+  \node[font=\tiny\bfseries, text=darkblue!70] at (\colC,-1.02) {TCP POOLING};
+  \node[font=\tiny\bfseries, text=darkblue!70] at (\colD,-1.02) {TE PRIORITY};
 
   % ════════════════════════════════════════════════════════════════════════════
   % PHASE 1 — CL.TE Injection
   % ════════════════════════════════════════════════════════════════════════════
-  \fill[phasebg1, rounded corners=2pt, opacity=0.4]
-    (-1.5,-1.45) rectangle (13.5,-4.2);
-  \node[phaselabel, fill=danger!20, text=danger!80!black] at (-1.1,-1.7)
-    {Ph.\,1};
+  \fill[phasebg1, rounded corners=4pt, opacity=0.3]
+    (-1.5,-1.45) rectangle (15.5,-4.1);
+  \node[phaselabel, fill=danger!20, text=danger!80!black] at (-0.8,-1.7)
+    {PHASE 1};
 
   % Attacker → Nginx
-  \node[infobox, fill=danger!10, draw=danger, anchor=north west]
-    (pkt) at (\colA-0.4,-1.5)
+  \node[infobox, fill=danger!8, draw=danger, anchor=north west]
+    (pkt) at (\colA-0.5,-1.5)
     {\textcolor{danger}{\textbf{POST /reflect}}\\[1pt]
      CL: 153 \;\textbar\; TE: chunked\\
-     + smuggled GET prefix};
+     + smuggled GET payload};
 
-  \draw[arr, danger] (\colA+1.4,-1.9) -- node[above, font=\tiny, fill=white,
-    inner sep=1pt]{dual headers} (\colB-1.4,-1.9);
+  \draw[arr, danger] (\colA+1.6,-2.0) -- node[above, font=\tiny, fill=phasebg1!40,
+    inner sep=2pt, rounded corners=2pt]{\textbf{Dual framing headers}} (\colB-1.6,-2.0);
 
   % Nginx → Varnish
-  \draw[arr, danger] (\colB+1.4,-2.4) -- node[above, font=\tiny, fill=white,
-    inner sep=1pt]{forwards all bytes} (\colC-1.4,-2.4);
+  \draw[arr, danger] (\colB+1.6,-2.5) -- node[above, font=\tiny, fill=phasebg1!40,
+    inner sep=2pt, rounded corners=2pt]{Forward all bytes} (\colC-1.6,-2.5);
 
   % Varnish → Backend
-  \draw[arr, danger] (\colC+1.4,-2.9) -- node[above, font=\tiny, fill=white,
-    inner sep=1pt]{passes unaltered} (\colD-1.4,-2.9);
+  \draw[arr, danger] (\colC+1.6,-3.0) -- node[above, font=\tiny, fill=phasebg1!40,
+    inner sep=2pt, rounded corners=2pt]{No normalization} (\colD-1.6,-3.0);
 
   % Backend action
-  \node[infobox, fill=warn!15, draw=warn!80!black, anchor=north west,
-        text width=3.8cm]
-    (bact) at (\colD-0.8,-3.15)
-    {reads \texttt{Transfer\_Encoding}\\
-     parses chunked body\\
-     \textcolor{danger}{\bfseries stops at \texttt{0\textbackslash r\textbackslash n\textbackslash r\textbackslash n}}\\[2pt]
-     \textcolor{accent}{\bfseries Smuggled GET left in socket!}};
+  \node[infobox, fill=warn!10, draw=warn!90!black, anchor=north west,
+        text width=4.2cm]
+    (bact) at (\colD-1.0,-3.2)
+    {Reads \texttt{Transfer\_Encoding}\\
+     Parses chunked body\\
+     \textcolor{danger}{\bfseries Stops at \texttt{0\textbackslash r\textbackslash n\textbackslash r\textbackslash n}}\\[2pt]
+     \textcolor{accent!80!black}{\bfseries $\rightarrow$ Smuggled GET left in socket}};
 
   % ════════════════════════════════════════════════════════════════════════════
   % PHASE 2 — Trigger + Cache Poisoning
   % ════════════════════════════════════════════════════════════════════════════
-  \fill[phasebg2, rounded corners=2pt, opacity=0.4]
-    (-1.5,-4.3) rectangle (13.5,-7.1);
-  \node[phaselabel, fill=warn!25, text=warn!80!black] at (-1.1,-4.6)
-    {Ph.\,2};
+  \fill[phasebg2, rounded corners=4pt, opacity=0.3]
+    (-1.5,-4.2) rectangle (15.5,-6.9);
+  \node[phaselabel, fill=warn!30, text=warn!80!black] at (-0.8,-4.4)
+    {PHASE 2};
 
   % Attacker trigger
-  \node[infobox, fill=warn!15, draw=warn!70!black, anchor=north west]
-    at (\colA-0.4,-4.45)
-    {\textcolor{warn!80!black}{\textbf{GET /js/app.js}}\\[1pt]
-     same TCP connection};
+  \node[infobox, fill=warn!8, draw=warn!80!black, anchor=north west]
+    at (\colA-0.5,-4.4)
+    {\textcolor{warn!90!black}{\textbf{GET /js/app.js}}\\[1pt]
+     Persistent TCP conn};
 
-  \draw[arr, warn!80!black] (\colA+1.4,-4.9) --
-    node[above, font=\tiny, fill=white, inner sep=1pt]{same conn}
-    (\colB-1.4,-4.9);
+  \draw[arr, warn!90!black] (\colA+1.6,-4.9) --
+    node[above, font=\tiny, fill=phasebg2!40, inner sep=2pt]{Session reuse}
+    (\colB-1.6,-4.9);
 
-  \draw[arr, warn!80!black] (\colB+1.4,-5.3) --
-    node[above, font=\tiny, fill=white, inner sep=1pt]{forwards GET}
-    (\colC-1.4,-5.3);
+  \draw[arr, warn!90!black] (\colB+1.6,-5.4) --
+    node[above, font=\tiny, fill=phasebg2!40, inner sep=2pt]{Relay trigger}
+    (\colC-1.6,-5.4);
 
-  \draw[arr, warn!80!black] (\colC+1.4,-5.7) --
-    node[above, font=\tiny, fill=white, inner sep=1pt]{cache MISS}
-    (\colD-1.4,-5.7);
+  \draw[arr, warn!90!black] (\colC+1.6,-5.9) --
+    node[above, font=\tiny, fill=phasebg2!40, inner sep=2pt]{Cache MISS}
+    (\colD-1.6,-5.9);
 
   % Backend reads smuggled prefix
-  \node[infobox, fill=danger!12, draw=danger, anchor=north west,
-        text width=3.8cm]
-    at (\colD-0.8,-5.95)
+  \node[infobox, fill=danger!8, draw=danger, anchor=north west,
+        text width=4.2cm]
+    at (\colD-1.0,-6.05)
     {\textcolor{danger}{\bfseries Reads SMUGGLED prefix}\\
-     \texttt{GET /reflect?q=\textless xss\textgreater}\\
-     Returns attacker's HTML!};
+     \texttt{GET /reflect?q=alert(1)}\\
+     \textcolor{danger!80!black}{Origin returns payload!}};
 
   % Return arrow — poisoned response
-  \draw[arr, danger, dashed] (\colD-1.4,-6.7) --
-    node[below, font=\tiny, fill=white, inner sep=1pt]
-    {\textcolor{danger}{XSS HTML response}}
-    (\colC+1.4,-6.7);
+  \draw[arr, danger, dashed] (\colD-1.6,-6.7) --
+    node[below, font=\tiny, fill=phasebg2!40, inner sep=2pt]
+    {\textcolor{danger}{Malicious HTML response}}
+    (\colC+1.6,-6.7);
 
   % Varnish caches
-  \node[infobox, fill=danger!12, draw=danger, anchor=north east]
-    at (\colC+0.4,-6.85)
-    {\textcolor{danger}{\bfseries CACHES poisoned HTML}\\
-     key: \texttt{/js/app.js}\\
-     TTL: 1 hour};
+  \node[infobox, fill=danger!10, draw=danger, anchor=north east]
+    at (\colC-0.3,-6.5)
+    {\textcolor{danger}{\bfseries CACHE POISONED}\\[1pt]
+     Bound to: \texttt{/js/app.js}};
 
   % ════════════════════════════════════════════════════════════════════════════
   % PHASE 3 — Victim
   % ════════════════════════════════════════════════════════════════════════════
-  \fill[phasebg3, rounded corners=2pt, opacity=0.4]
-    (-1.5,-7.2) rectangle (13.5,-8.6);
-  \node[phaselabel, fill=success!20, text=success!70!black] at (-1.1,-7.55)
-    {Ph.\,3};
+  \fill[phasebg3, rounded corners=4pt, opacity=0.3]
+    (-1.5,-7.0) rectangle (15.5,-8.3);
+  \node[phaselabel, fill=success!30, text=success!80!black] at (-0.8,-7.35)
+    {PHASE 3};
 
-  \node[infobox, fill=success!10, draw=success!70!black, anchor=north west]
-    at (\colA-0.4,-7.35)
-    {\textcolor{success!70!black}{\textbf{Victim browser}}\\
-     new TCP connection\\
+  \node[infobox, fill=success!8, draw=success!80!black, anchor=north west]
+    at (\colA-0.5,-7.1)
+    {\textcolor{success!80!black}{\textbf{Victim device}}\\
      \texttt{GET /js/app.js}};
 
-  \draw[arr, success!70!black] (\colA+1.4,-7.9) -- (\colB-1.4,-7.9);
-  \draw[arr, success!70!black] (\colB+1.4,-7.9) -- (\colC-1.4,-7.9);
+  \draw[arr, success!80!black] (\colA+1.6,-7.75) -- (\colB-1.6,-7.75);
+  \draw[arr, success!80!black] (\colB+1.6,-7.75) -- (\colC-1.6,-7.75);
 
   \node[infobox, fill=danger!15, draw=danger, anchor=north west,
-        text width=4.2cm] at (\colC-0.4,-8.05)
+        text width=4.8cm] at (\colC-0.5,-7.85)
     {\textcolor{danger}{\bfseries X-Cache: HIT}
-     --- serves poisoned HTML\\
-     \textcolor{danger}{XSS executes in victim's browser}};
+     --- Serves poisoned payload\\
+     \textcolor{danger!80!black}{XSS executes in victim's account context}};
 
 \end{tikzpicture}
 
