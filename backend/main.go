@@ -47,14 +47,15 @@ func handleConnection(conn net.Conn) {
 			if err != nil || headerLine == "\r\n" {
 				break
 			}
-			if strings.Contains(strings.ToUpper(headerLine), "TRANSFER_ENCODING: CHUNKED") || 
-			   strings.Contains(strings.ToUpper(headerLine), "TRANSFER-ENCODING: CHUNKED") {
+			upper := strings.ToUpper(strings.TrimSpace(headerLine))
+			if strings.Contains(upper, "TRANSFER_ENCODING: CHUNKED") ||
+			   strings.Contains(upper, "TRANSFER-ENCODING: CHUNKED") {
 				isChunked = true
 			}
 		}
 
-		// THE NATIVE VULNERABILITY: 
-		// If TE is present, we read until the 0\r\n\r\n terminator and STOP, 
+		// THE NATIVE VULNERABILITY:
+		// If TE is present, we read until the 0\r\n\r\n terminator and STOP,
 		// completely ignoring the Content-Length. This leaves the smuggled bytes in the socket.
 		if isChunked {
 			readChunkedBody(reader)
