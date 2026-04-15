@@ -1,0 +1,342 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+% ─── Theme & Colors ────────────────────────────────────────────────────────────
+\usetheme{Madrid}
+\usecolortheme{default}
+
+\definecolor{darkblue}{HTML}{0D1B2A}
+\definecolor{accent}{HTML}{00B4D8}
+\definecolor{accentlight}{HTML}{90E0EF}
+\definecolor{danger}{HTML}{EF233C}
+\definecolor{success}{HTML}{06D6A0}
+\definecolor{warn}{HTML}{FFB703}
+\definecolor{codebg}{HTML}{1A1A2E}
+\definecolor{textlight}{HTML}{CAF0F8}
+
+\setbeamercolor{palette primary}{bg=darkblue,fg=accent}
+\setbeamercolor{palette secondary}{bg=darkblue!90,fg=white}
+\setbeamercolor{palette tertiary}{bg=darkblue!80,fg=white}
+\setbeamercolor{palette quaternary}{bg=darkblue,fg=white}
+\setbeamercolor{structure}{fg=accent}
+\setbeamercolor{block title}{bg=accent,fg=darkblue}
+\setbeamercolor{block body}{bg=darkblue!15,fg=darkblue}
+\setbeamercolor{block title alerted}{bg=danger,fg=white}
+\setbeamercolor{block body alerted}{bg=danger!10,fg=black}
+\setbeamercolor{block title example}{bg=success,fg=darkblue}
+\setbeamercolor{block body example}{bg=success!10,fg=black}
+\setbeamercolor{frametitle}{bg=darkblue,fg=accent}
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=darkblue}
+\setbeamercolor{footline}{bg=darkblue,fg=accentlight}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{headline}{}
+
+% Footline
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.25ex,dp=1ex,left,leftskip=2mm]{footline}%
+      \tiny Group 19
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.34\paperwidth,ht=2.25ex,dp=1ex,center]{footline}%
+      \tiny Infrastructure Vulnerability Analysis: HTTP/1.1 Request Smuggling
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.25ex,dp=1ex,right,rightskip=2mm]{footline}%
+      \tiny \insertframenumber{} / \inserttotalframenumber
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+
+% ─── Packages ──────────────────────────────────────────────────────────────────
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,shapes.geometric,positioning,calc,fit,backgrounds,shadows}
+\usepackage{fontenc}
+\usepackage{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{multicol}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\tiny\color{accentlight},
+  keywordstyle=\color{accent}\bfseries,
+  commentstyle=\color{gray!70},
+  stringstyle=\color{warn},
+  breaklines=true,
+  frame=none,
+  xleftmargin=2mm,
+  xrightmargin=2mm,
+  aboveskip=1mm,
+  belowskip=1mm,
+}
+
+% ─── TikZ Styles ───────────────────────────────────────────────────────────────
+\tikzset{
+  actor/.style={
+    rectangle, rounded corners=3pt,
+    draw=accent, line width=1.2pt,
+    fill=darkblue!85, text=white,
+    font=\bfseries\scriptsize,
+    minimum height=8mm, minimum width=22mm,
+    align=center
+  },
+  arrow/.style={-{Stealth[length=4pt]}, line width=1pt, color=accent},
+  redarrow/.style={-{Stealth[length=4pt]}, line width=1pt, color=danger},
+  greenarrow/.style={-{Stealth[length=4pt]}, line width=1pt, color=success},
+  label/.style={font=\tiny, text=darkblue, align=center},
+  warnbox/.style={rectangle, rounded corners=2pt, fill=warn!20, draw=warn, line width=0.8pt, font=\tiny, inner sep=2pt, align=center},
+  dangerbox/.style={rectangle, rounded corners=2pt, fill=danger!15, draw=danger, line width=0.8pt, font=\tiny, inner sep=2pt, align=center},
+  successbox/.style={rectangle, rounded corners=2pt, fill=success!15, draw=success, line width=0.8pt, font=\tiny, inner sep=2pt, align=center},
+  mitigate/.style={rectangle, rounded corners=3pt, draw=success, line width=1pt, fill=success!10, font=\scriptsize\bfseries, inner sep=3pt, align=left, text=darkblue},
+}
+
+% ─── Metadata ──────────────────────────────────────────────────────────────────
+\title[HTTP/1.1 Request Smuggling]{\textbf{Infrastructure Vulnerability Analysis}\\[2pt]
+  \large HTTP/1.1 Request Smuggling \& Mitigation}
+\subtitle{Web Cache Poisoning via CL.TE Desynchronization}
+\author[Group 19]{%
+  \textbf{Group 19}\\[3pt]
+  \scriptsize
+  Laksh Mendpara \quad Sahilpreet Singh \quad Saher Dev\\
+  Aaditya Bansal \quad Anshuman Parida
+}
+\date{05.07.2025}
+\institute[]{Cybersecurity Laboratory}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+% ─── SLIDE 1: TITLE ────────────────────────────────────────────────────────────
+{
+\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+  \begin{tikzpicture}[remember picture, overlay]
+    % Background fill
+    \fill[darkblue] (current page.south west) rectangle (current page.north east);
+    % Accent bar top
+    \fill[accent] (current page.north west) rectangle +(\paperwidth, -3pt);
+    % Accent bar bottom
+    \fill[accent] (current page.south west) rectangle +(\paperwidth, 3pt);
+    % Decorative grid lines (background texture)
+    \foreach \x in {0,1.5,...,17} {
+      \draw[accent!8, line width=0.4pt] (\x, 0) -- (\x, 9.6);
+    }
+    \foreach \y in {0,1.2,...,9.6} {
+      \draw[accent!8, line width=0.4pt] (0, \y) -- (17, \y);
+    }
+    % Main title box
+    \node[text=white, font=\bfseries\LARGE, align=center] at (current page.center) {%
+      \textcolor{accent}{\rule{6cm}{1.5pt}}\\[6pt]
+      \textcolor{accentlight}{\small INFRASTRUCTURE VULNERABILITY ANALYSIS}\\[8pt]
+      {\LARGE HTTP/1.1 Request Smuggling}\\[4pt]
+      {\large \& Cache Poisoning Mitigation}\\[6pt]
+      \textcolor{accent}{\rule{6cm}{1.5pt}}
+    };
+    % Subtitle / date
+    \node[text=accentlight, font=\scriptsize, align=center] at ([yshift=-2.8cm]current page.center) {%
+      CL.TE Desynchronization Attack on a 3-Tier Stack (Nginx → Varnish → Go Backend)
+    };
+    % Team
+    \node[text=white, font=\tiny, align=center] at ([yshift=-3.8cm]current page.center) {%
+      \textcolor{accent}{\textbf{Group 19}} \quad|\quad
+      Laksh Mendpara \;·\; Sahilpreet Singh \;·\; Saher Dev \;·\; Aaditya Bansal \;·\; Anshuman Parida
+    };
+    \node[text=accentlight!60, font=\tiny] at ([yshift=-4.4cm]current page.center) {05.07.2025};
+  \end{tikzpicture}
+\end{frame}
+}
+
+% ─── SLIDE 2: ATTACK FLOW ──────────────────────────────────────────────────────
+\begin{frame}{\textbf{CL.TE Attack Flow} — Four Phases}
+
+\begin{tikzpicture}[remember picture, scale=0.88, transform shape]
+
+  % ── Actors (column headers) ──────────────────────────────────────────────────
+  \node[actor] (attacker) at (0,0)    {Attacker};
+  \node[actor] (nginx)    at (3.2,0)  {Nginx\\{\tiny underscores\_in\_headers}};
+  \node[actor] (varnish)  at (6.4,0)  {Varnish\\{\tiny cache layer}};
+  \node[actor] (backend)  at (9.6,0)  {Go Backend\\{\tiny custom TCP parser}};
+
+  % Vertical dashed lifelines
+  \foreach \n in {attacker, nginx, varnish, backend} {
+    \draw[dashed, color=accent!30, line width=0.5pt] (\n.south) -- ++(0,-6.8);
+  }
+
+  % ── Phase labels ─────────────────────────────────────────────────────────────
+  \node[font=\tiny\bfseries, text=accent, anchor=west] at (-0.9,-0.6) {\textbf{Ph.0}};
+  \node[font=\tiny\bfseries, text=danger, anchor=west] at (-0.9,-1.6) {\textbf{Ph.1}};
+  \node[font=\tiny\bfseries, text=warn,   anchor=west] at (-0.9,-3.4) {\textbf{Ph.2}};
+  \node[font=\tiny\bfseries, text=success,anchor=west] at (-0.9,-5.0) {\textbf{Ph.3}};
+
+  % Phase 0 line
+  \draw[color=accent!30, line width=0.4pt, dashed] (-0.8,-0.95) -- (10.5,-0.95);
+
+  % ── Phase 0: Setup labels ────────────────────────────────────────────────────
+  \node[label, text=accentlight, font=\tiny] at (0,-0.85)   {raw socket};
+  \node[label, text=accentlight, font=\tiny] at (3.2,-0.85) {CL priority};
+  \node[label, text=accentlight, font=\tiny] at (6.4,-0.85) {keep-alive};
+  \node[label, text=accentlight, font=\tiny] at (9.6,-0.85) {TE priority};
+
+  % ── Phase 1: CL.TE Smuggling Request ─────────────────────────────────────────
+  \node[dangerbox, anchor=west] (pkt1) at (-0.1,-1.55)  {POST /reflect};
+  \draw[redarrow] (0,-1.65) -- node[above, font=\tiny, text=danger]{CL:153 + TE:chunked} (3.2,-1.65);
+  \draw[redarrow] (3.2,-2.0) -- node[above, font=\tiny]{fwds all bytes} (6.4,-2.0);
+  \draw[redarrow] (6.4,-2.35) -- node[above, font=\tiny]{passes unaltered} (9.6,-2.35);
+
+  % Backend action box
+  \node[warnbox, anchor=west, text width=3.1cm] at (9.75,-2.85) {%
+    reads TE header\\
+    reads chunked body\\
+    \textcolor{danger}{\textbf{stops at 0\textbackslash r\textbackslash n\textbackslash r\textbackslash n}}\\
+    \textcolor{accent}{smuggled GET stays in socket!}
+  };
+
+  % Phase boundary
+  \draw[color=warn!40, line width=0.4pt, dashed] (-0.8,-3.0) -- (10.5,-3.0);
+
+  % ── Phase 2: Trigger + Cache Poisoning ───────────────────────────────────────
+  \node[warnbox, anchor=west] at (-0.1,-3.35) {GET /js/app.js};
+  \draw[arrow, color=warn]  (0,-3.5) -- node[above,font=\tiny]{same TCP conn} (3.2,-3.5);
+  \draw[arrow, color=warn]  (3.2,-3.8) -- node[above,font=\tiny]{fwds request} (6.4,-3.8);
+  \draw[arrow, color=warn]  (6.4,-4.1) -- node[above,font=\tiny]{cache MISS → fetch} (9.6,-4.1);
+
+  % Backend reads smuggled prefix
+  \node[dangerbox, anchor=west, text width=3.1cm] at (9.75,-4.5) {%
+    \textcolor{danger}{\textbf{reads SMUGGLED prefix}}\\
+    GET /reflect?q=\textcolor{danger}{\textless{}xss\textgreater{}}\\
+    returns attacker HTML!
+  };
+
+  % Varnish caches the poisoned response
+  \draw[redarrow] (9.6,-4.75) -- node[above, font=\tiny, text=danger]{XSS HTML} (6.4,-4.75);
+  \node[dangerbox, anchor=east, text width=2.9cm] at (6.35,-5.1) {%
+    \textcolor{danger}{\textbf{CACHES response}}\\
+    key: /js/app.js\\
+    TTL: 1 hour
+  };
+
+  % Phase boundary
+  \draw[color=success!40, line width=0.4pt, dashed] (-0.8,-5.25) -- (10.5,-5.25);
+
+  % ── Phase 3: Victim ─────────────────────────────────────────────────────────
+  \node[font=\tiny\bfseries, text=danger, anchor=west] at (-0.9,-5.5) {\textbf{Victim}};
+  \node[successbox, anchor=west] at (-0.1,-5.5) {GET /js/app.js};
+  \draw[greenarrow] (0,-5.65) -- (3.2,-5.65);
+  \draw[greenarrow] (3.2,-5.85) -- (6.4,-5.85);
+  \node[dangerbox, anchor=west, text width=3.5cm] at (6.45,-6.0)
+    {\textcolor{danger}{\textbf{X-Cache: HIT}} — serves poisoned HTML\\XSS executes in victim's browser};
+
+\end{tikzpicture}
+
+\end{frame}
+
+% ─── SLIDE 3: MITIGATION ────────────────────────────────────────────────────────
+\begin{frame}{\textbf{Mitigation \& Remediation} — Closing All Vectors}
+
+\begin{columns}[T]
+
+% ── Left: control flow diagram ─────────────────────────────────────────────────
+\begin{column}{0.44\textwidth}
+\begin{tikzpicture}[node distance=4.5mm, scale=0.95, transform shape]
+
+  \node[mitigate, fill=darkblue!8, draw=accent, text width=5cm]
+    (req) {\textbf{Incoming Request}};
+
+  \node[mitigate, fill=danger!12, draw=danger, text width=5cm, below=of req]
+    (check1) {\textbf{Both CL + TE present?} \hfill \textcolor{danger}{→ 400}\\
+    \textcolor{gray}{\tiny\texttt{map "\$http\_te:\$http\_cl" \$reject \{ "~\^{}[..][..].+" 1; \}}}};
+
+  \node[mitigate, text width=5cm, below=of check1]
+    (strip) {\textbf{Strip Transfer-Encoding}\\
+    \textcolor{gray}{\tiny\texttt{proxy\_set\_header Transfer-Encoding ""}}\\
+    \textcolor{darkblue!60}{\scriptsize → backend never sees TE header}};
+
+  \node[mitigate, text width=5cm, below=of strip]
+    (buf) {\textbf{Buffer Full Request}\\
+    \textcolor{gray}{\tiny\texttt{proxy\_request\_buffering on}}\\
+    \textcolor{darkblue!60}{\scriptsize → eliminates partial-write races}};
+
+  \node[mitigate, text width=5cm, below=of buf]
+    (conn) {\textbf{Force Connection: close}\\
+    \textcolor{gray}{\tiny\texttt{proxy\_set\_header Connection "close"}}\\
+    \textcolor{darkblue!60}{\scriptsize → destroys any lingering socket bytes}};
+
+  \node[mitigate, fill=success!12, draw=success, text width=5cm, below=of conn]
+    (h2) {\textbf{Upgrade to HTTP/2}\\
+    \textcolor{darkblue!60}{\scriptsize binary framing → neutralises CL/TE ambiguity entirely}};
+
+  \draw[greenarrow] (req.south) -- (check1.north);
+  \draw[redarrow, dashed] (check1.east) -- ++(0.5,0) node[right, font=\tiny, text=danger]{\textbf{Reject 400}};
+  \draw[greenarrow] (check1.south) -- (strip.north);
+  \draw[greenarrow] (strip.south) -- (buf.north);
+  \draw[greenarrow] (buf.south) -- (conn.north);
+  \draw[greenarrow] (conn.south) -- (h2.north);
+
+\end{tikzpicture}
+\end{column}
+
+% ── Right: before/after + verification ────────────────────────────────────────
+\begin{column}{0.54\textwidth}
+
+\begin{block}{\small Mitigation Layer Summary}
+\begin{tabular}{@{}p{1.6cm} p{4.5cm}@{}}
+\toprule
+\textbf{Layer} & \textbf{Action} \\
+\midrule
+\textbf{Nginx} & \texttt{underscores\_in\_headers on} (expose header for map); reject dual-length → 400; strip TE; buffer; close \\[2pt]
+\textbf{Varnish} & Reject dual-length at cache edge; \texttt{unset bereq.http.TE}; \texttt{Connection: close}; never cache 5xx \\[2pt]
+\textbf{Backend} & Drain \texttt{Content-Length} body on non-chunked requests to prevent socket corruption \\
+\bottomrule
+\end{tabular}
+\end{block}
+
+\vspace{2mm}
+
+\begin{alertblock}{\small Without mitigation — attack passes through}
+\ttfamily\tiny
+\colorbox{codebg}{\parbox{\dimexpr\linewidth-2\fboxsep}{%
+  \color{accentlight}
+  HTTP/1.1 200 OK\\[-1pt]
+  X-Cache: HIT\\[-1pt]
+  Content-Type: text/html\\[1pt]
+  \color{danger}
+  {\small$<$}html{$>$$<$}body{$>$$<$}script{$>$}alert('Cache Poisoned!'){$<$/}script{$>$}\\[0pt]
+}}
+\end{alertblock}
+
+\begin{exampleblock}{\small With mitigation — attack blocked at edge}
+\ttfamily\tiny
+\colorbox{codebg}{\parbox{\dimexpr\linewidth-2\fboxsep}{%
+  \color{accentlight}
+  HTTP/1.1 400 Bad Request\\[-1pt]
+  Content-Type: text/plain\\[1pt]
+  \color{success}
+  Ambiguous request rejected -- dual length headers
+}}
+\end{exampleblock}
+
+\vspace{1mm}
+\begin{center}
+\begin{tikzpicture}
+  \node[draw=success, fill=success!12, rounded corners=3pt,
+        line width=1pt, font=\scriptsize\bfseries, text=success!70!black,
+        inner xsep=6pt, inner ysep=3pt]{%
+    $\checkmark$\; Cache stays clean \quad
+    $\checkmark$\; Attack blocked at edge \quad
+    $\checkmark$\; No 503/panic
+  };
+\end{tikzpicture}
+\end{center}
+
+\end{column}
+\end{columns}
+
+\end{frame}
+
+\end{document}
